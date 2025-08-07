@@ -33,9 +33,15 @@ app.post(
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
 
-      console.log("✅ Payment complete!", session);
+      // 🛑 Filter out non-Base44 orders
+      if (session.metadata?.source !== "booksoflove") {
+        console.log("⚠️ Ignoring webhook: not from booksoflove");
+        return res.status(200).send("Ignored");
+      }
 
-      // Send email
+      console.log("✅ Payment complete from booksoflove!", session);
+
+      // Send email only for Base44 orders
       await sendOrderEmail(session);
     }
 
