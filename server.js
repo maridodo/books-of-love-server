@@ -3,6 +3,21 @@ import Stripe from "stripe";
 import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import nodemailer from "nodemailer";
+import crypto from "node:crypto";
+
+//Logging utility to mask sensitive info (secret from base44)
+function maskTail(s = "") {
+  if (!s) return "(missing)";
+  if (s.length <= 6) return "*".repeat(s.length);
+  return `${s.slice(0, 2)}…${s.slice(-4)}`;
+}
+
+function timingSafeEq(a = "", b = "") {
+  const ab = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
 
 dotenv.config();
 
@@ -18,6 +33,16 @@ dotenv.config();
     console.warn(`⚠️ Missing env var: ${k}`);
   }
 });
+
+// 🔐 Log masked secret info (for quick sanity check)
+const sec = process.env.BASE44_CONTACT_SECRET || "";
+if (!sec) {
+  console.warn("🚫 BASE44_CONTACT_SECRET is EMPTY/undefined");
+} else {
+  console.log(
+    `🔐 CONTACT_SECRET length=${sec.length}, endsWith=${sec.slice(-4)}`
+  );
+}
 
 const app = express();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -131,6 +156,26 @@ app.post(
 
 // .env must include: BASE44_CONTACT_SECRET=supersecretstring
 app.post("/api/contact", async (req, res) => {
+  const reqId = crypto.randomUUID();
+
+  const incomingSecret = (req.body?.secret ?? "").toString();
+  const serverSecret = process.env.BASE44_CONTACT_SECRET || "";
+
+  // Log masked tails + lengths (never full values)
+  console.log(`🔐 [contact ${reqId}] secrets`, {
+    incomingLen: incomingSecret.length,
+    incomingTail: maskTail(incomingSecret),
+    serverLen: serverSecret.length,
+    serverTail: maskTail(serverSecret),
+  });
+
+  // Use constant-time compare to avoid timing leaks
+  const authorized = timingSafeEq(incomingSecret, serverSecret);
+  if (!authorized) {
+    console.warn(`🚫 [contact ${reqId}] Unauthorized: secret mismatch`);
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+
   try {
     // 🔐 Require the shared secret
     if (req.body?.secret !== process.env.BASE44_CONTACT_SECRET) {
