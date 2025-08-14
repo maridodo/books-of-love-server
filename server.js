@@ -6,9 +6,33 @@ import nodemailer from "nodemailer";
 
 dotenv.config();
 
+// ✅ Warn if required environment variables are missing
+[
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "EMAIL_USER",
+  "EMAIL_PASS",
+  "BASE44_CONTACT_SECRET",
+].forEach((k) => {
+  if (!process.env[k]) {
+    console.warn(`⚠️ Missing env var: ${k}`);
+  }
+});
+
 const app = express();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-11-15",
+});
+
+// JSON parser only for /api routes (Stripe still uses raw body)
+app.use("/api", express.json());
+
+const transporter = nodemailer.createTransport({
+  service: "Gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
 });
 
 //Webhook endpoint for checkout session completion from stripe
@@ -105,6 +129,124 @@ app.post(
 //   }
 // );
 
+// .env must include: BASE44_CONTACT_SECRET=supersecretstring
+app.post("/api/contact", async (req, res) => {
+  try {
+    // 🔐 Require the shared secret
+    if (req.body?.secret !== process.env.BASE44_CONTACT_SECRET) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    // 🧹 Extract fields
+    const name = (req.body?.name ?? "").toString().trim();
+    const email = (req.body?.email ?? "").toString().trim();
+    const subject = (req.body?.subject ?? "New Contact Form").toString().trim();
+    const message = (req.body?.message ?? "").toString().trim();
+    const phone = (req.body?.phone ?? "").toString().trim();
+    const orderRef = (req.body?.orderRef ?? "").toString().trim();
+
+    if (!name || !email || !message) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing required fields" });
+    }
+
+    // ✉️ Admin email to info@talesofme.io
+    const adminText = [
+      `New contact form submission:`,
+      ``,
+      `Name: ${name}`,
+      `Email: ${email}`,
+      phone ? `Phone: ${phone}` : null,
+      orderRef ? `Order Ref: ${orderRef}` : null,
+      ``,
+      `Subject: ${subject}`,
+      ``,
+      `Message:`,
+      message,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const adminHTML = `
+      <div style="font-family:Arial, sans-serif;line-height:1.5">
+        <h2>📨 New Contact Form</h2>
+        <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+        <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+        ${phone ? `<p><strong>Phone:</strong> ${escapeHtml(phone)}</p>` : ""}
+        ${
+          orderRef
+            ? `<p><strong>Order Ref:</strong> ${escapeHtml(orderRef)}</p>`
+            : ""
+        }
+        <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
+        <h3>Message</h3>
+        <pre style="white-space:pre-wrap;background:#f8f8f8;padding:12px;border-radius:8px;border:1px solid #eee;">${escapeHtml(
+          message
+        )}</pre>
+      </div>
+    `;
+
+    const adminMail = {
+      from: '"Books of Love" <no-reply@talesofme.io>',
+      to: "info@talesofme.io",
+      subject: `📨 Contact – ${subject}`,
+      text: adminText,
+      html: adminHTML,
+      replyTo: email,
+    };
+
+    // (Optional) auto‑reply — comment out if not needed
+    const autoReply = {
+      from: '"Books of Love" <no-reply@talesofme.io>',
+      to: email,
+      subject: `We received your message ✔️`,
+      text: `Hi ${name},
+
+Thanks for reaching out! We received your message and will get back to you shortly.
+
+Subject: ${subject}
+
+${message}
+
+With love,
+Books of Love Team`,
+      html: `
+        <div style="font-family:Arial,sans-serif;line-height:1.6">
+          <p>Hi ${escapeHtml(name)},</p>
+          <p>Thanks for reaching out! We received your message and will get back to you shortly.</p>
+          <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
+          <p><strong>Message:</strong></p>
+          <pre style="white-space:pre-wrap;background:#f8f8f8;padding:12px;border-radius:8px;border:1px solid #eee;">${escapeHtml(
+            message
+          )}</pre>
+          <p>With love,<br/>Books of Love Team</p>
+        </div>
+      `,
+    };
+
+    const results = await Promise.allSettled([
+      transporter.sendMail(adminMail),
+      transporter.sendMail(autoReply), // ← remove this line to disable auto‑reply
+    ]);
+
+    // Log failures for observability
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(
+          i === 0 ? "❌ Admin email failed:" : "❌ Auto-reply failed:",
+          r.reason
+        );
+      }
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ /api/contact error:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
 async function sendOrderEmails(session, lineItems) {
   const bookTitle = session.metadata?.book_title || "Your Book";
   const customerEmail = session.customer_details?.email || "";
@@ -119,14 +261,6 @@ async function sendOrderEmails(session, lineItems) {
     unitAmount: (li.price?.unit_amount ?? 0) / 100,
     subtotal: (li.amount_subtotal ?? 0) / 100,
   }));
-
-  const transporter = nodemailer.createTransport({
-    service: "Gmail",
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
 
   // 1) Customer confirmation (same as before)
   const customerMail = {
@@ -197,6 +331,7 @@ Books of Love Team`,
   ]);
 }
 
+//helper
 function escapeHtml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
