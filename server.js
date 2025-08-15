@@ -4,7 +4,20 @@ import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import nodemailer from "nodemailer";
 import crypto from "node:crypto";
-import { createClient as createBase44Client } from "@base44/sdk";
+
+//Logging utility to mask sensitive info (secret from base44)
+function maskTail(s = "") {
+  if (!s) return "(missing)";
+  if (s.length <= 6) return "*".repeat(s.length);
+  return `${s.slice(0, 2)}…${s.slice(-4)}`;
+}
+
+function timingSafeEq(a = "", b = "") {
+  const ab = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
 
 dotenv.config();
 
@@ -21,24 +34,19 @@ dotenv.config();
   }
 });
 
-const BASE44_API_URL = process.env.BASE44_API_URL || "https://app.base44.com";
-const BASE44_APP_ID = process.env.BASE44_APP_ID; // e.g. 6880b6507073b18d04501aed
-const BASE44_API_KEY = process.env.BASE44_SERVER_API_KEY; // keep in env, don't hardcode
-
-// create Base44 client
-const base44 = createBase44Client({
-  appId: process.env.BASE44_APP_ID,
-  apiKey: process.env.BASE44_SERVER_API_KEY,
-});
-
-// Monday constants
-const MONDAY_API_URL = "https://api.monday.com/v2";
-const BOARD_ID = 2048516652; // PURCHASES - NEW
+// 🔐 Log masked secret info (for quick sanity check)
+const sec = process.env.BASE44_CONTACT_SECRET || "";
+if (!sec) {
+  console.warn("🚫 BASE44_CONTACT_SECRET is EMPTY/undefined");
+} else {
+  console.log(
+    `🔐 CONTACT_SECRET length=${sec.length}, endsWith=${sec.slice(-4)}`
+  );
+}
 
 const app = express();
-
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2024-06-20",
+  apiVersion: "2022-11-15",
 });
 
 // JSON parser only for /api routes (Stripe still uses raw body)
@@ -72,10 +80,7 @@ app.post(
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
 
-      // for dev purposes, log the session ID and metadata
-      console.log("🔐 Base44 key ends with:", (BASE44_API_KEY || "").slice(-4));
-      console.log("📘 Book ID:", session.metadata?.book_id);
-
+      // 🛑 Only process your app’s orders
       if (session.metadata?.source !== "booksoflove") {
         console.log("⚠️ Ignoring webhook: not from booksoflove");
         return res.status(200).send("Ignored");
@@ -83,62 +88,34 @@ app.post(
 
       console.log("✅ Payment complete from booksoflove!", session.id);
 
-      // ✅ Acknowledge Stripe immediately
+      // ✅ Acknowledge to Stripe immediately (don’t risk timeouts)
       res.status(200).send("✅ Webhook received");
 
-      // 🔎 Fetch and log Book after ack
-      (async () => {
-        const bookId = session.metadata?.book_id;
-        if (!bookId) {
-          console.warn(
-            "⚠️ No book_id in Stripe metadata; skipping Base44 fetch"
-          );
-          return;
-        }
-        if (!BASE44_APP_ID || !BASE44_API_KEY) {
-          console.error(
-            "❌ Missing BASE44_APP_ID or BASE44_SERVER_API_KEY env vars"
-          );
-          return;
-        }
+      // 🔎 Enrich details after responding
+      try {
+        // Get line items
+        const lineItems = await stripe.checkout.sessions.listLineItems(
+          session.id,
+          { limit: 50 }
+        );
 
-        try {
-          const book = await getBookById(bookId);
-          console.log("📚 Base44 Book record:");
-          console.dir(book, { depth: null });
-        } catch (e) {
-          console.error("❌ Error fetching Book from Base44:", e.message);
-        }
-      })();
+        // Optionally expand more objects if you need them:
+        // const fullSession = await stripe.checkout.sessions.retrieve(session.id, {
+        //   expand: ["payment_intent", "customer"],
+        // });
 
-      return; // don’t fall through
+        await sendOrderEmails(session, lineItems);
+      } catch (err) {
+        console.error("📧 Email send failed:", err);
+      }
+      return; // important: don't fall through to the 200 below
     }
 
+    // For other event types, just 200 OK
     res.status(200).send("✅ Event ignored");
   }
 );
 
-// Helper function to fetch Book by ID from Base44
-async function getBookById(bookId) {
-  const url = `${BASE44_API_URL}/api/apps/${encodeURIComponent(
-    BASE44_APP_ID
-  )}/entities/Book/${encodeURIComponent(bookId)}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: {
-      api_key: BASE44_API_KEY,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `Base44 GET ${url} failed: ${res.status} ${res.statusText} ${text}`
-    );
-  }
-  return res.json();
-}
 // Stripe requires the raw body
 // app.post(
 //   "/stripe-webhook",
@@ -442,27 +419,3 @@ function escapeHtml(str = "") {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-//Logging utility to mask sensitive info (secret from base44)
-function maskTail(s = "") {
-  if (!s) return "(missing)";
-  if (s.length <= 6) return "*".repeat(s.length);
-  return `${s.slice(0, 2)}…${s.slice(-4)}`;
-}
-
-function timingSafeEq(a = "", b = "") {
-  const ab = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
-}
-
-// 🔐 Log masked secret info (for quick sanity check)
-const sec = process.env.BASE44_CONTACT_SECRET || "";
-if (!sec) {
-  console.warn("🚫 BASE44_CONTACT_SECRET is EMPTY/undefined");
-} else {
-  console.log(
-    `🔐 CONTACT_SECRET length=${sec.length}, endsWith=${sec.slice(-4)}`
-  );
-}
