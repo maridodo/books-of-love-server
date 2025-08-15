@@ -72,6 +72,10 @@ app.post(
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
 
+      // for dev purposes, log the session ID and metadata
+      console.log("🔐 Base44 key ends with:", (BASE44_API_KEY || "").slice(-4));
+      console.log("📘 Book ID:", session.metadata?.book_id);
+
       if (session.metadata?.source !== "booksoflove") {
         console.log("⚠️ Ignoring webhook: not from booksoflove");
         return res.status(200).send("Ignored");
