@@ -21,6 +21,10 @@ dotenv.config();
   }
 });
 
+const BASE44_API_URL = process.env.BASE44_API_URL || "https://app.base44.com";
+const BASE44_APP_ID = process.env.BASE44_APP_ID; // e.g. 6880b6507073b18d04501aed
+const BASE44_API_KEY = process.env.BASE44_SERVER_API_KEY; // keep in env, don't hardcode
+
 // create Base44 client
 const base44 = createBase44Client({
   appId: process.env.BASE44_APP_ID,
@@ -75,37 +79,62 @@ app.post(
 
       console.log("✅ Payment complete from booksoflove!", session.id);
 
-      // ✅ Ack to Stripe first
+      // ✅ Acknowledge Stripe immediately
       res.status(200).send("✅ Webhook received");
 
-      // 🔍 After ack, fetch the Book record from Base44
+      // 🔎 Fetch and log Book after ack
       (async () => {
         const bookId = session.metadata?.book_id;
         if (!bookId) {
-          console.warn("⚠️ No book_id in metadata; skipping Base44 fetch");
+          console.warn(
+            "⚠️ No book_id in Stripe metadata; skipping Base44 fetch"
+          );
+          return;
+        }
+        if (!BASE44_APP_ID || !BASE44_API_KEY) {
+          console.error(
+            "❌ Missing BASE44_APP_ID or BASE44_SERVER_API_KEY env vars"
+          );
           return;
         }
 
         try {
-          const book = await base44.entities.Book.find(bookId);
-          if (book) {
-            console.log("📚 Book record from Base44:");
-            console.dir(book, { depth: null });
-          } else {
-            console.warn("⚠️ Book not found for ID:", bookId);
-          }
-        } catch (error) {
-          console.error("❌ Error accessing Base44 Book entity:", error);
+          const book = await getBookById(bookId);
+          console.log("📚 Base44 Book record:");
+          console.dir(book, { depth: null });
+        } catch (e) {
+          console.error("❌ Error fetching Book from Base44:", e.message);
         }
       })();
 
-      return;
+      return; // don’t fall through
     }
 
     res.status(200).send("✅ Event ignored");
   }
 );
 
+// Helper function to fetch Book by ID from Base44
+async function getBookById(bookId) {
+  const url = `${BASE44_API_URL}/api/apps/${encodeURIComponent(
+    BASE44_APP_ID
+  )}/entities/Book/${encodeURIComponent(bookId)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      api_key: BASE44_API_KEY,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Base44 GET ${url} failed: ${res.status} ${res.statusText} ${text}`
+    );
+  }
+  return res.json();
+}
 // Stripe requires the raw body
 // app.post(
 //   "/stripe-webhook",
