@@ -1,3 +1,4 @@
+// config/env.js
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -6,23 +7,53 @@ const required = [
   "STRIPE_WEBHOOK_SECRET",
   "EMAIL_USER",
   "EMAIL_PASS",
-  // Optional for contact endpoint; if you use it, set it.
-  "BASE44_CONTACT_SECRET",
+
+  // ✅ Base44: required for our dev routes & webhook enrichment
+  "BASE44_APP_ID",
+  "BASE44_SERVER_API_KEY",
+
+  // Optional: only needed if you protect debug routes
+  // "DEBUG_SECRET",
+
+  // Optional: contact form shared secret (route will 401 if absent)
+  // "BASE44_CONTACT_SECRET",
+
+  //Monday.com
+  "MONDAY_API_TOKEN",
 ];
 
 const missing = required.filter((k) => !process.env[k]);
 if (missing.length) {
   console.warn("⚠️ Missing environment variables:", missing.join(", "));
-  // Don’t throw here if you want the app to boot without all routes enabled.
-  // If you prefer hard-fail, uncomment:
+  // If you prefer a hard fail in dev, uncomment:
   // throw new Error(`Missing env: ${missing.join(", ")}`);
 }
 
 export const ENV = {
+  // Runtime
+  NODE_ENV: process.env.NODE_ENV || "development",
   PORT: process.env.PORT || "3000",
+
+  // Stripe
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+
+  // Mail
   EMAIL_USER: process.env.EMAIL_USER,
   EMAIL_PASS: process.env.EMAIL_PASS,
-  BASE44_CONTACT_SECRET: process.env.BASE44_CONTACT_SECRET || "", // allow empty → contact route will 401
+
+  // Base44
+  BASE44_API_URL: process.env.BASE44_API_URL || "https://app.base44.com",
+  BASE44_APP_ID: process.env.BASE44_APP_ID,
+  BASE44_SERVER_API_KEY: process.env.BASE44_SERVER_API_KEY,
+
+  // Monday
+  MONDAY_API_URL: process.env.MONDAY_API_URL || "https://api.monday.com",
+  MONDAY_API_TOKEN: process.env.MONDAY_API_TOKEN,
+
+  // Misc
+  DEBUG_SECRET: process.env.DEBUG_SECRET || "",
+  BASE44_CONTACT_SECRET: process.env.BASE44_CONTACT_SECRET || "",
+  IS_PROD: (process.env.NODE_ENV || "").toLowerCase() === "production",
+  IS_DEV: (process.env.NODE_ENV || "").toLowerCase() !== "production",
 };
