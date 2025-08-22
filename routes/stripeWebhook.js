@@ -3,15 +3,12 @@ import bodyParser from "body-parser";
 import { stripe } from "../services/stripe.js";
 import { sendOrderEmails } from "../services/mailer.js";
 import { upsertBookById } from "../services/monday.js";
+import { sendTikTokPurchaseEvent } from "../services/tiktok.js"; // NEW IMPORT
 import { ENV } from "../config/env.js";
 import { asyncHandler } from "../utils.js";
 
 const router = express.Router();
 
-/**
- * Stripe requires the RAW body for signature verification.
- * We attach bodyParser.raw ON THIS ROUTE ONLY.
- */
 router.post(
   "/stripe-webhook",
   bodyParser.raw({ type: "application/json" }),
@@ -69,14 +66,33 @@ router.post(
               "❌ Monday.com sync failed (non-blocking):",
               mondayErr.message
             );
-            // Don't throw - we don't want to fail the entire webhook for Monday sync issues
           }
         } else {
           console.log("ℹ️ No book_id found - skipping Monday.com sync");
         }
+
+        // NEW: Send TikTok purchase event
+        try {
+          const tiktokData = {
+            event_id: session.id, // Use Stripe session ID as unique event ID
+            value: session.amount_total / 100, // Convert cents to dollars
+            currency: session.currency?.toUpperCase() || "USD",
+            order_id: session.id,
+            email: session.customer_details?.email || session.customer_email,
+          };
+
+          console.log("🎯 Sending TikTok purchase event:", session.id);
+          const tiktokResult = await sendTikTokPurchaseEvent(tiktokData);
+          console.log("✅ TikTok tracking successful:", tiktokResult.success);
+        } catch (tiktokErr) {
+          console.error(
+            "❌ TikTok tracking failed (non-blocking):",
+            tiktokErr.message
+          );
+          // Don't throw - we don't want TikTok issues to fail the webhook
+        }
       } catch (err) {
         console.error("🔧 Post-webhook processing failed:", err);
-        // Email/Monday errors shouldn't cause webhook to fail
       }
       return;
     }
@@ -86,9 +102,6 @@ router.post(
   })
 );
 
-/**
- * Extract book_id from Stripe session metadata
- */
 function extractBookId(session) {
   return session.metadata?.book_id || null;
 }

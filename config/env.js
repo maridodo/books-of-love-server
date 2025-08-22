@@ -18,8 +18,11 @@ const required = [
   // Optional: contact form shared secret (route will 401 if absent)
   // "BASE44_CONTACT_SECRET",
 
-  //Monday.com
+  // Monday.com
   "MONDAY_API_TOKEN",
+
+  // TikTok: required for server-side purchase tracking
+  "TIKTOK_ACCESS_TOKEN",
 ];
 
 const missing = required.filter((k) => !process.env[k]);
@@ -50,6 +53,10 @@ export const ENV = {
   // Monday
   MONDAY_API_URL: process.env.MONDAY_API_URL || "https://api.monday.com",
   MONDAY_API_TOKEN: process.env.MONDAY_API_TOKEN,
+
+  // TikTok
+  TIKTOK_ACCESS_TOKEN: process.env.TIKTOK_ACCESS_TOKEN,
+  TIKTOK_PIXEL_ID: process.env.TIKTOK_PIXEL_ID || "D2HBRHBC7U76CJBP4G", // Default to your current pixel
 
   // Misc
   DEBUG_SECRET: process.env.DEBUG_SECRET || "",
