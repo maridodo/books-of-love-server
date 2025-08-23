@@ -93,10 +93,10 @@ function mapBookToColumnValues(book) {
 
     // Contact
     text_mkv06zzx: book.author || "",
-    email_mkv0aysf: book.author_email
+    email_mkv0aysf: book.email
       ? {
-          email: String(book.author_email),
-          text: String(book.author || book.author_email),
+          email: String(book.email),
+          text: String(book.author || book.email),
         }
       : null,
     phone_mkv0z01: book.author_phone
@@ -165,14 +165,6 @@ export async function upsertBookById(bookId, boardType = "PURCHASED") {
   // 1) Fetch book data from Base44
   const book = await getBookById(bookId);
   console.log("🔍 Raw book from Base44:", JSON.stringify(book, null, 2));
-
-  // Add this NEW debug log:
-  console.log("🔍 EMAIL DEBUG - Checking email fields in book data:");
-  console.log("  - book.author_email:", book.author_email);
-  console.log("  - book.email:", book.email);
-  console.log("  - book.authorEmail:", book.authorEmail);
-  console.log("  - book.user_email:", book.user_email);
-  console.log("  - All book keys:", Object.keys(book));
 
   if (!book) throw new Error("Book not found (null response)");
 
