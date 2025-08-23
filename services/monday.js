@@ -352,8 +352,8 @@ export async function upsertBookToPurchased(bookId) {
 }
 
 export async function upsertBookToCreated(bookId) {
-  console.log("⏳ Waiting 3 seconds for Base44 to save email...");
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  console.log("⏳ Waiting 10 seconds for Base44 to save email...");
+  await new Promise((resolve) => setTimeout(resolve, 10000));
 
   return upsertBookById(bookId, "CREATED");
 }
