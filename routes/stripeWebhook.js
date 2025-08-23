@@ -2,8 +2,8 @@ import express from "express";
 import bodyParser from "body-parser";
 import { stripe } from "../services/stripe.js";
 import { sendOrderEmails } from "../services/mailer.js";
-import { upsertBookById } from "../services/monday.js";
-import { sendTikTokPurchaseEvent } from "../services/tiktok.js"; // NEW IMPORT
+import { upsertBookToPurchased } from "../services/monday.js";
+//import { sendTikTokPurchaseEvent } from "../services/tiktok.js"; // not in use anymore
 import { ENV } from "../config/env.js";
 import { asyncHandler } from "../utils.js";
 
@@ -59,7 +59,7 @@ router.post(
         if (bookId) {
           console.log("📚 Found book_id, syncing to Monday.com:", bookId);
           try {
-            const result = await upsertBookById(bookId);
+            const result = await upsertBookToPurchased(bookId);
             console.log("✅ Monday.com sync successful:", result.action);
           } catch (mondayErr) {
             console.error(
@@ -71,26 +71,26 @@ router.post(
           console.log("ℹ️ No book_id found - skipping Monday.com sync");
         }
 
-        // NEW: Send TikTok purchase event
-        try {
-          const tiktokData = {
-            event_id: session.id, // Use Stripe session ID as unique event ID
-            value: session.amount_total / 100, // Convert cents to dollars
-            currency: session.currency?.toUpperCase() || "USD",
-            order_id: session.id,
-            email: session.customer_details?.email || session.customer_email,
-          };
+        // NEW: Send TikTok purchase event - commented out coz we are soing it client side now
+        // try {
+        //   const tiktokData = {
+        //     event_id: session.id, // Use Stripe session ID as unique event ID
+        //     value: session.amount_total / 100, // Convert cents to dollars
+        //     currency: session.currency?.toUpperCase() || "USD",
+        //     order_id: session.id,
+        //     email: session.customer_details?.email || session.customer_email,
+        //   };
 
-          console.log("🎯 Sending TikTok purchase event:", session.id);
-          const tiktokResult = await sendTikTokPurchaseEvent(tiktokData);
-          console.log("✅ TikTok tracking successful:", tiktokResult.success);
-        } catch (tiktokErr) {
-          console.error(
-            "❌ TikTok tracking failed (non-blocking):",
-            tiktokErr.message
-          );
-          // Don't throw - we don't want TikTok issues to fail the webhook
-        }
+        //   console.log("🎯 Sending TikTok purchase event:", session.id);
+        //   const tiktokResult = await sendTikTokPurchaseEvent(tiktokData);
+        //   console.log("✅ TikTok tracking successful:", tiktokResult.success);
+        // } catch (tiktokErr) {
+        //   console.error(
+        //     "❌ TikTok tracking failed (non-blocking):",
+        //     tiktokErr.message
+        //   );
+        //   // Don't throw - we don't want TikTok issues to fail the webhook
+        // }
       } catch (err) {
         console.error("🔧 Post-webhook processing failed:", err);
       }

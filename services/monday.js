@@ -11,9 +11,12 @@ const monday = mondaySdk();
 monday.setToken(MONDAY_API_TOKEN);
 
 // ---------- Board & Columns Configuration ----------
-const BOARD_ID = "2107736787"; // Books of Love
+const BOARDS = {
+  PURCHASED: "2107736787", // Books of Love (original - for purchased books)
+  CREATED: "2112014301", // Books of Love - Created (for email collection)
+};
 
-// Column IDs on your Monday board
+// Column IDs (same for both boards since you duplicated)
 const COL = {
   base44_id: "text_mkv0wyr5", // Base44 ID
   idea_title: "text_mkv0t2c7", // Book idea/title
@@ -49,7 +52,7 @@ function pruneEmpty(obj) {
 }
 
 // Query all items and find an item where the Base44 ID column text matches
-async function findItemByBase44Id(base44Id) {
+async function findItemByBase44Id(base44Id, boardId) {
   const query = `
     query ($boardId: [ID!]!, $limit: Int) {
       boards(ids: $boardId) {
@@ -67,7 +70,7 @@ async function findItemByBase44Id(base44Id) {
     }
   `;
   const res = await monday.api(query, {
-    variables: { boardId: [BOARD_ID], limit: 200 },
+    variables: { boardId: [boardId], limit: 200 },
   });
 
   const items = res.data?.boards?.[0]?.items_page?.items || [];
@@ -146,9 +149,18 @@ function mapBookToColumnValues(book) {
   });
 }
 
-// ---------- Main Upsert Function ----------
-export async function upsertBookById(bookId) {
-  console.log("📖 Upserting Base44 book:", bookId);
+// ---------- Main Upsert Function (Updated) ----------
+export async function upsertBookById(bookId, boardType = "PURCHASED") {
+  const boardId = BOARDS[boardType];
+  if (!boardId) {
+    throw new Error(
+      `Invalid board type: ${boardType}. Use "PURCHASED" or "CREATED"`
+    );
+  }
+
+  console.log(
+    `📖 Upserting Base44 book: ${bookId} to ${boardType} board (${boardId})`
+  );
 
   // 1) Fetch book data from Base44
   const book = await getBookById(bookId);
@@ -160,14 +172,16 @@ export async function upsertBookById(bookId) {
   if (!docId) throw new Error("Book found but missing id/_id/book_id");
 
   // 2) Find existing Monday item by Base44 ID
-  const existing = await findItemByBase44Id(docId);
+  const existing = await findItemByBase44Id(docId, boardId);
 
   // 3) Map → Monday column values
   const valuesJson = JSON.stringify(mapBookToColumnValues(book));
 
   try {
     if (existing) {
-      console.log(`✏️ Updating Monday item ${existing.id}`);
+      console.log(
+        `✏️ Updating Monday item ${existing.id} in ${boardType} board`
+      );
       const mutation = `
         mutation ($itemId: ID!, $boardId: ID!, $values: JSON!) {
           change_multiple_column_values(
@@ -180,17 +194,17 @@ export async function upsertBookById(bookId) {
       const resp = await monday.api(mutation, {
         variables: {
           itemId: existing.id,
-          boardId: BOARD_ID,
+          boardId: boardId,
           values: valuesJson,
         },
       });
       const updated = resp.data?.change_multiple_column_values;
-      const url = `https://app.monday.com/boards/${BOARD_ID}/pulses/${existing.id}`;
+      const url = `https://app.monday.com/boards/${boardId}/pulses/${existing.id}`;
       console.log("✅ Updated:", updated || "(no payload)");
       console.log("🔗 Open item:", url);
-      return { action: "updated", itemId: String(existing.id), url };
+      return { action: "updated", itemId: String(existing.id), url, boardType };
     } else {
-      console.log("➕ Creating new Monday item");
+      console.log(`➕ Creating new Monday item in ${boardType} board`);
       const mutation = `
         mutation ($boardId: ID!, $name: String!, $values: JSON) {
           create_item(
@@ -202,7 +216,7 @@ export async function upsertBookById(bookId) {
       `;
       const resp = await monday.api(mutation, {
         variables: {
-          boardId: BOARD_ID,
+          boardId: boardId,
           name: book.book_idea_title || book.title || `Book ${docId}`,
           values: valuesJson,
         },
@@ -210,7 +224,7 @@ export async function upsertBookById(bookId) {
       const created = resp.data?.create_item;
       const itemId = created?.id ? String(created.id) : null;
       const url = itemId
-        ? `https://app.monday.com/boards/${BOARD_ID}/pulses/${itemId}`
+        ? `https://app.monday.com/boards/${boardId}/pulses/${itemId}`
         : "";
       console.log("✅ Created:", created || "(no payload)");
       if (itemId) console.log("🔗 Open item:", url);
@@ -219,7 +233,7 @@ export async function upsertBookById(bookId) {
           "⚠️ No item id returned. Raw:",
           JSON.stringify(resp, null, 2)
         );
-      return { action: "created", itemId, url };
+      return { action: "created", itemId, url, boardType };
     }
   } catch (err) {
     // Bubble up detailed Monday errors
@@ -231,4 +245,13 @@ export async function upsertBookById(bookId) {
   } finally {
     console.log("✅ Upsert complete");
   }
+}
+
+// ---------- Convenience Functions ----------
+export async function upsertBookToPurchased(bookId) {
+  return upsertBookById(bookId, "PURCHASED");
+}
+
+export async function upsertBookToCreated(bookId) {
+  return upsertBookById(bookId, "CREATED");
 }
