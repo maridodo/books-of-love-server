@@ -17,13 +17,13 @@ router.post(
 
     // Extract fields
     const bookId = (req.body?.book_id ?? "").toString().trim();
-    const userEmail = (req.body?.email ?? "").toString().trim(); // Changed from user_email to email
+    //const userEmail = (req.body?.email ?? "").toString().trim(); // Changed from user_email to email
     const source = (req.body?.source ?? "").toString().trim(); // Optional source field
 
     // 1. LOG: Received request
     console.log("🎯 === BOOK CREATION WEBHOOK RECEIVED ===");
     console.log(`📖 Book ID: ${bookId}`);
-    console.log(`📧 Email: ${userEmail || "not provided"}`);
+    //console.log(`📧 Email: ${userEmail || "not provided"}`);
     console.log(`📍 Source: ${source || "not provided"}`);
     console.log("============================================");
 
@@ -60,7 +60,7 @@ router.post(
     } catch (error) {
       console.error("❌ === ERROR IN BOOK CREATION PROCESS ===");
       console.error(`📖 Book ID: ${bookId}`);
-      console.error(`📧 Email: ${userEmail || "not provided"}`);
+      // console.error(`📧 Email: ${userEmail || "not provided"}`);
       console.error(`🔥 Error: ${error.message}`);
       console.error(`🔍 Full error:`, error);
       console.error("========================================");
