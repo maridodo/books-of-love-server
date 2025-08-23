@@ -166,6 +166,14 @@ export async function upsertBookById(bookId, boardType = "PURCHASED") {
   const book = await getBookById(bookId);
   console.log("🔍 Raw book from Base44:", JSON.stringify(book, null, 2));
 
+  // Add this NEW debug log:
+  console.log("🔍 EMAIL DEBUG - Checking email fields in book data:");
+  console.log("  - book.author_email:", book.author_email);
+  console.log("  - book.email:", book.email);
+  console.log("  - book.authorEmail:", book.authorEmail);
+  console.log("  - book.user_email:", book.user_email);
+  console.log("  - All book keys:", Object.keys(book));
+
   if (!book) throw new Error("Book not found (null response)");
 
   const docId = normalizeId(book);
