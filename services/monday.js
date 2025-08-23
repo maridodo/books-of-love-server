@@ -21,7 +21,7 @@ const COL = {
   base44_id: "text_mkv0wyr5", // Base44 ID
   idea_title: "text_mkv0t2c7", // Book idea/title
   author: "text_mkv06zzx", // Author (name/username)
-  author_email: "email_mkv0aysf", // Author email
+  email: "email_mkv0aysf", // Email (renamed for consistency)
   author_phone: "phone_mkv0z01", // Author phone
   book_type: "text_mkv0c43m",
   lover_name: "text_mkv0megr",
