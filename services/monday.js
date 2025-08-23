@@ -84,7 +84,7 @@ async function uploadGeneratedPagesToMonday(
     formData.append(
       "query",
       `
-      mutation add_file($itemId: Int!, $columnId: String!, $file: File!) {
+      mutation add_file($itemId: ID!, $columnId: String!, $file: File!) {
         add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) {
           id
           name
@@ -96,7 +96,7 @@ async function uploadGeneratedPagesToMonday(
     formData.append(
       "variables",
       JSON.stringify({
-        itemId: parseInt(itemId),
+        itemId: itemId, // Fixed: removed parseInt()
         columnId: filesColumnId,
       })
     );
