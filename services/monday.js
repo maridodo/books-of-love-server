@@ -37,6 +37,10 @@ const COL = {
     PURCHASED: "file_mkv3898z", // Files column for purchased books
     CREATED: "file_mkv3qqce", // Files column for created books
   },
+  generated_pages_docs: {
+    PURCHASED: null, // Add doc column to purchased board later
+    CREATED: "doc_mkv4b5an", // Doc column for created books
+  },
   pages_fingerprint: "long_text_mkv0hwkc", // Long text (pagesFingerprint JSON)
   created_at: "date_mkv033jy", // Date
   updated_at: "date_mkv0rp6g", // Date
@@ -54,260 +58,37 @@ function pruneEmpty(obj) {
   }
   return out;
 }
-//OLD: now using readable HTML
+
 // Upload JSON file to Monday.com Files column
-// async function uploadGeneratedPagesToMonday(
-//   itemId,
-//   boardId,
-//   boardType,
-//   generatedPages
-// ) {
-//   if (!generatedPages) {
-//     console.log("📁 No generated pages to upload");
-//     return null;
-//   }
-
-//   const jsonContent = JSON.stringify(generatedPages, null, 2);
-//   const filename = `generated_pages_${itemId}_${Date.now()}.json`;
-//   const filesColumnId = COL.generated_pages_files[boardType];
-
-//   console.log(
-//     `📁 Uploading generated pages file: ${filename} to column ${filesColumnId}`
-//   );
-
-//   try {
-//     // Create a Buffer from JSON
-//     const buffer = Buffer.from(jsonContent, "utf8");
-
-//     // Monday.com file upload using their REST API
-//     const formData = new FormData();
-//     formData.append(
-//       "query",
-//       `
-//       mutation add_file($itemId: ID!, $columnId: String!, $file: File!) {
-//         add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) {
-//           id
-//           name
-//           url
-//         }
-//       }
-//     `
-//     );
-//     formData.append(
-//       "variables",
-//       JSON.stringify({
-//         itemId: itemId, // Fixed: removed parseInt()
-//         columnId: filesColumnId,
-//       })
-//     );
-
-//     // Create a blob from buffer and append as file
-//     const blob = new Blob([buffer], { type: "application/json" });
-//     formData.append("map", JSON.stringify({ 1: ["variables.file"] }));
-//     formData.append("1", blob, filename);
-
-//     const response = await fetch("https://api.monday.com/v2/file", {
-//       method: "POST",
-//       headers: {
-//         Authorization: `Bearer ${MONDAY_API_TOKEN}`,
-//       },
-//       body: formData,
-//     });
-
-//     if (!response.ok) {
-//       throw new Error(
-//         `File upload failed: ${response.status} ${response.statusText}`
-//       );
-//     }
-
-//     const result = await response.json();
-//     console.log("📁 File upload result:", result);
-
-//     return result;
-//   } catch (error) {
-//     console.error("❌ Error uploading generated pages file:", error);
-//     // Don't throw - we don't want file upload failures to break the whole process
-//     return null;
-//   }
-// }
-
-// Generate readable HTML from generated pages
-function generateReadableHTML(generatedPages, bookTitle = "Book") {
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Generated Pages - ${bookTitle}</title>
-    <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            margin: 0; 
-            padding: 20px; 
-            background-color: #f8f9fa; 
-            color: #333;
-        }
-        .container { 
-            max-width: 800px; 
-            margin: 0 auto; 
-            background: white; 
-            padding: 30px; 
-            border-radius: 10px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }
-        .header { 
-            border-bottom: 3px solid #007acc; 
-            padding-bottom: 15px; 
-            margin-bottom: 30px; 
-        }
-        .header h1 { 
-            margin: 0; 
-            color: #007acc; 
-            font-size: 24px; 
-        }
-        .metadata { 
-            color: #666; 
-            font-size: 14px; 
-            margin-top: 5px; 
-        }
-        .page { 
-            margin-bottom: 30px; 
-            padding: 20px; 
-            border: 1px solid #e1e5e9; 
-            border-radius: 8px; 
-            background: #fafbfc; 
-        }
-        .page-number { 
-            font-weight: bold; 
-            color: #007acc; 
-            margin-bottom: 15px; 
-            font-size: 16px;
-            border-bottom: 1px solid #e1e5e9;
-            padding-bottom: 5px;
-        }
-        .page-content { 
-            line-height: 1.8; 
-            font-size: 15px;
-            white-space: pre-wrap;
-        }
-        .raw-json { 
-            margin-top: 40px; 
-            border-top: 2px solid #e1e5e9; 
-            padding-top: 20px; 
-        }
-        .raw-json summary { 
-            cursor: pointer; 
-            font-weight: bold; 
-            color: #666; 
-            padding: 10px;
-            background: #f1f3f4;
-            border-radius: 5px;
-        }
-        .raw-json pre { 
-            background: #f8f9fa; 
-            padding: 20px; 
-            border-radius: 8px; 
-            border: 1px solid #e1e5e9;
-            overflow-x: auto; 
-            font-size: 12px;
-            line-height: 1.4;
-        }
-        .no-pages { 
-            text-align: center; 
-            color: #666; 
-            font-style: italic; 
-            padding: 40px; 
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📖 Generated Pages</h1>
-            <div class="metadata">
-                <strong>Book:</strong> ${bookTitle}<br>
-                <strong>Generated:</strong> ${new Date().toLocaleString()}<br>
-                <strong>Total Pages:</strong> ${
-                  Array.isArray(generatedPages) ? generatedPages.length : "N/A"
-                }
-            </div>
-        </div>
-        
-        <div class="content">
-            ${
-              Array.isArray(generatedPages) && generatedPages.length > 0
-                ? generatedPages
-                    .map(
-                      (page, index) => `
-                  <div class="page">
-                      <div class="page-number">📄 Page ${index + 1}</div>
-                      <div class="page-content">${
-                        typeof page === "string"
-                          ? page
-                              .replace(/\n/g, "<br>")
-                              .replace(/"/g, "&quot;")
-                              .replace(/</g, "&lt;")
-                              .replace(/>/g, "&gt;")
-                          : JSON.stringify(page, null, 2)
-                              .replace(/\n/g, "<br>")
-                              .replace(/"/g, "&quot;")
-                              .replace(/</g, "&lt;")
-                              .replace(/>/g, "&gt;")
-                      }</div>
-                  </div>
-                `
-                    )
-                    .join("")
-                : '<div class="no-pages">No pages generated yet</div>'
-            }
-        </div>
-        
-        <div class="raw-json">
-            <details>
-                <summary>🔧 Raw JSON Data (for developers)</summary>
-                <pre>${JSON.stringify(generatedPages, null, 2)
-                  .replace(/</g, "&lt;")
-                  .replace(/>/g, "&gt;")}</pre>
-            </details>
-        </div>
-    </div>
-</body>
-</html>`;
-  return html;
-}
-
-// Upload HTML file to Monday.com Files column
 async function uploadGeneratedPagesToMonday(
   itemId,
   boardId,
   boardType,
-  generatedPages,
-  bookTitle = "Book"
+  generatedPages
 ) {
   if (!generatedPages) {
     console.log("📁 No generated pages to upload");
     return null;
   }
 
-  // Generate HTML content instead of JSON
-  const htmlContent = generateReadableHTML(generatedPages, bookTitle);
-  const filename = `generated_pages_${itemId}_${Date.now()}.html`;
+  const jsonContent = JSON.stringify(generatedPages, null, 2);
+  const filename = `generated_pages_${itemId}_${Date.now()}.json`;
   const filesColumnId = COL.generated_pages_files[boardType];
 
   console.log(
-    `📁 Uploading generated pages HTML file: ${filename} to column ${filesColumnId}`
+    `📁 Uploading generated pages file: ${filename} to column ${filesColumnId}`
   );
 
   try {
-    // Create a Buffer from HTML
-    const buffer = Buffer.from(htmlContent, "utf8");
+    // Create a Buffer from JSON
+    const buffer = Buffer.from(jsonContent, "utf8");
 
     // Monday.com file upload using their REST API
     const formData = new FormData();
     formData.append(
       "query",
       `
-      mutation add_file($itemId: ID!, $columnId: String!, $file: File!) {
+      mutation add_file($itemId: Int!, $columnId: String!, $file: File!) {
         add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) {
           id
           name
@@ -319,13 +100,13 @@ async function uploadGeneratedPagesToMonday(
     formData.append(
       "variables",
       JSON.stringify({
-        itemId: itemId,
+        itemId: parseInt(itemId),
         columnId: filesColumnId,
       })
     );
 
-    // Create a blob from buffer and append as HTML file
-    const blob = new Blob([buffer], { type: "text/html" });
+    // Create a blob from buffer and append as file
+    const blob = new Blob([buffer], { type: "application/json" });
     formData.append("map", JSON.stringify({ 1: ["variables.file"] }));
     formData.append("1", blob, filename);
 
@@ -344,11 +125,11 @@ async function uploadGeneratedPagesToMonday(
     }
 
     const result = await response.json();
-    console.log("📁 HTML file upload result:", result);
+    console.log("📁 File upload result:", result);
 
     return result;
   } catch (error) {
-    console.error("❌ Error uploading generated pages HTML file:", error);
+    console.error("❌ Error uploading generated pages file:", error);
     // Don't throw - we don't want file upload failures to break the whole process
     return null;
   }
@@ -534,18 +315,6 @@ export async function upsertBookById(bookId, boardType = "PURCHASED") {
       console.log("✅ Created:", created || "(no payload)");
     }
 
-    // OLD - JSON
-    // 4) Upload generated pages file if we have the data and a valid item ID
-    // if (resultItemId && book.generatedPages) {
-    //   console.log("📁 Uploading generated pages file...");
-    //   await uploadGeneratedPagesToMonday(
-    //     resultItemId,
-    //     boardId,
-    //     boardType,
-    //     book.generatedPages
-    //   );
-    // }
-
     // 4) Upload generated pages file if we have the data and a valid item ID
     if (resultItemId && book.generatedPages) {
       console.log("📁 Uploading generated pages file...");
@@ -553,8 +322,7 @@ export async function upsertBookById(bookId, boardType = "PURCHASED") {
         resultItemId,
         boardId,
         boardType,
-        book.generatedPages,
-        book.book_idea_title || book.title || "Untitled Book" // Pass book title
+        book.generatedPages
       );
     }
 
@@ -588,7 +356,7 @@ export async function upsertBookToPurchased(bookId) {
 }
 
 export async function upsertBookToCreated(bookId) {
-  console.log("⏳ Waiting 20 seconds for Base44 to save email...AAA");
+  console.log("⏳ Waiting 20 seconds for Base44 to save email...");
   await new Promise((resolve) => setTimeout(resolve, 20000));
 
   return upsertBookById(bookId, "CREATED");
