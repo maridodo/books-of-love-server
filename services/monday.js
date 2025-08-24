@@ -1,4 +1,4 @@
-// services/monday.js - Claude v28 - Google Docs link in Generated Pages column
+// services/monday.js - Claude v29 - Fixed Monday.com column update (added board_id, fixed JSON type)
 import mondaySdk from "monday-sdk-js";
 import { ENV } from "../config/env.js";
 import { getBookById } from "./base44.js";
@@ -94,7 +94,8 @@ async function createGeneratedPagesGoogleDoc(
       itemId,
       docResult.docUrl,
       docResult.title,
-      generatedPages.length
+      generatedPages.length,
+      boardType
     );
 
     return docResult;
@@ -109,14 +110,16 @@ async function addGoogleDocLinkToGeneratedPagesColumn(
   itemId,
   docUrl,
   docTitle,
-  pageCount
+  pageCount,
+  boardType
 ) {
   try {
     const generatedPagesColumnId = COL.generated_pages; // Use the existing Generated Pages column
+    const boardId = BOARDS[boardType]; // Get the board ID
 
     const mutation = `
-      mutation ($itemId: ID!, $columnId: String!, $value: String!) {
-        change_column_value(item_id: $itemId, column_id: $columnId, value: $value) {
+      mutation ($itemId: ID!, $boardId: ID!, $columnId: String!, $value: JSON!) {
+        change_column_value(item_id: $itemId, board_id: $boardId, column_id: $columnId, value: $value) {
           id
         }
       }
@@ -132,15 +135,15 @@ async function addGoogleDocLinkToGeneratedPagesColumn(
 
 This Google Doc contains all generated pages in a beautifully formatted document with edit permissions.`;
 
-    const linkValue = JSON.stringify({
-      text: linkContent,
-    });
+    // Fix: Use JSON format and include board_id
+    const linkValue = JSON.stringify({ text: linkContent });
 
     const response = await monday.api(mutation, {
       variables: {
         itemId: itemId,
+        boardId: boardId, // Added missing board_id
         columnId: generatedPagesColumnId,
-        value: linkValue,
+        value: linkValue, // This is now properly formatted JSON
       },
     });
 
