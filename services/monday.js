@@ -1,4 +1,4 @@
-// services/monday.js - Claude v27 - Google Docs integration (replaces updates/comments)
+// services/monday.js - Claude v28 - Google Docs link in Generated Pages column
 import mondaySdk from "monday-sdk-js";
 import { ENV } from "../config/env.js";
 import { getBookById } from "./base44.js";
@@ -39,10 +39,6 @@ const COL = {
     PURCHASED: "doc_mkv4jk7r", // Doc column for purchased books
     CREATED: "doc_mkv4b5an", // Doc column for created books
   },
-  generated_pages_link: {
-    PURCHASED: "link_mkv0w7p8", // Link column for Google Docs (reusing photo URL column)
-    CREATED: "link_mkv0w7p8", // Link column for Google Docs (same column ID)
-  },
   pages_fingerprint: "long_text_mkv0hwkc", // Long text (pagesFingerprint JSON)
   created_at: "date_mkv033jy", // Date
   updated_at: "date_mkv0rp6g", // Date
@@ -61,7 +57,7 @@ function pruneEmpty(obj) {
   return out;
 }
 
-// Create Google Doc and add link to Monday.com
+// Create Google Doc and add link to Generated Pages column
 async function createGeneratedPagesGoogleDoc(
   itemId,
   boardType,
@@ -92,13 +88,13 @@ async function createGeneratedPagesGoogleDoc(
       return null;
     }
 
-    // Add Google Doc link to Monday.com item
-    console.log("📄 Adding Google Doc link to Monday.com...");
-    await addGoogleDocLinkToMonday(
+    // Add Google Doc link to Generated Pages column in Monday.com
+    console.log("📄 Adding Google Doc link to Generated Pages column...");
+    await addGoogleDocLinkToGeneratedPagesColumn(
       itemId,
       docResult.docUrl,
-      boardType,
-      docResult.title
+      docResult.title,
+      generatedPages.length
     );
 
     return docResult;
@@ -108,15 +104,15 @@ async function createGeneratedPagesGoogleDoc(
   }
 }
 
-// Add Google Doc link to Monday.com item
-async function addGoogleDocLinkToMonday(itemId, docUrl, boardType, docTitle) {
+// Add Google Doc link to the Generated Pages column
+async function addGoogleDocLinkToGeneratedPagesColumn(
+  itemId,
+  docUrl,
+  docTitle,
+  pageCount
+) {
   try {
-    const linkColumnId = COL.generated_pages_link[boardType];
-
-    if (!linkColumnId) {
-      console.log("📄 No link column configured for Google Doc");
-      return;
-    }
+    const generatedPagesColumnId = COL.generated_pages; // Use the existing Generated Pages column
 
     const mutation = `
       mutation ($itemId: ID!, $columnId: String!, $value: String!) {
@@ -126,26 +122,43 @@ async function addGoogleDocLinkToMonday(itemId, docUrl, boardType, docTitle) {
       }
     `;
 
+    // Create readable content with the link
+    const linkContent = `📄 Generated Pages Document
+
+🔗 Click here to view: ${docUrl}
+
+📋 Title: ${docTitle}
+📊 Total Pages: ${pageCount}
+
+This Google Doc contains all generated pages in a beautifully formatted document with edit permissions.`;
+
     const linkValue = JSON.stringify({
-      url: docUrl,
-      text: docTitle || "Generated Pages Document",
+      text: linkContent,
     });
 
     const response = await monday.api(mutation, {
       variables: {
         itemId: itemId,
-        columnId: linkColumnId,
+        columnId: generatedPagesColumnId,
         value: linkValue,
       },
     });
 
     if (response.errors) {
-      console.error("📄 Monday.com link update errors:", response.errors);
+      console.error(
+        "📄 Monday.com Generated Pages column update errors:",
+        response.errors
+      );
     } else {
-      console.log("📄 Google Doc link added to Monday.com successfully");
+      console.log(
+        "📄 Google Doc link added to Generated Pages column successfully"
+      );
     }
   } catch (error) {
-    console.error("❌ Error adding Google Doc link to Monday.com:", error);
+    console.error(
+      "❌ Error adding Google Doc link to Generated Pages column:",
+      error
+    );
   }
 }
 
@@ -224,16 +237,11 @@ function mapBookToColumnValues(book, boardType) {
     // Status
     text_mkv0bg60: book.status || "",
 
-    // Generated pages - now handled by Google Docs
-    long_text_mkv0v67a: book.generatedPages
-      ? {
-          text: `Generated ${
-            Array.isArray(book.generatedPages)
-              ? book.generatedPages.length
-              : "N/A"
-          } pages - see Google Doc link`,
-        }
-      : null,
+    // Generated pages - will be updated with Google Doc link after creation
+    // long_text_mkv0v67a: book.generatedPages
+    //   ? { text: `Generated ${Array.isArray(book.generatedPages) ? book.generatedPages.length : 'N/A'} pages - see Google Doc link` }
+    //   : null,
+    // Note: This field will be updated with Google Doc link in step 4
 
     // Pages fingerprint
     long_text_mkv0hwkc: book.pagesFingerprint
