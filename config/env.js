@@ -12,14 +12,13 @@ const required = [
   "BASE44_APP_ID",
   "BASE44_SERVER_API_KEY",
 
-  // Optional: only needed if you protect debug routes
-  // "DEBUG_SECRET",
-
-  // Optional: contact form shared secret (route will 401 if absent)
-  // "BASE44_CONTACT_SECRET",
-
   // Monday.com
   "MONDAY_API_TOKEN",
+
+  // Google API (for Google Docs)
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "GOOGLE_REFRESH_TOKEN",
 
   // TikTok: required for server-side purchase tracking
   "TIKTOK_ACCESS_TOKEN",
@@ -54,9 +53,14 @@ export const ENV = {
   MONDAY_API_URL: process.env.MONDAY_API_URL || "https://api.monday.com",
   MONDAY_API_TOKEN: process.env.MONDAY_API_TOKEN,
 
+  // Google API
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+  GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN,
+
   // TikTok
   TIKTOK_ACCESS_TOKEN: process.env.TIKTOK_ACCESS_TOKEN,
-  TIKTOK_PIXEL_ID: process.env.TIKTOK_PIXEL_ID || "D2HBRHBC7U76CJBP4G", // Default to your current pixel
+  TIKTOK_PIXEL_ID: process.env.TIKTOK_PIXEL_ID || "D2HBRHBC7U76CJBP4G",
 
   // Misc
   DEBUG_SECRET: process.env.DEBUG_SECRET || "",

@@ -1,6 +1,7 @@
 import mondaySdk from "monday-sdk-js";
 import { ENV } from "../config/env.js";
 import { getBookById } from "./base44.js";
+import { createGoogleDocWithPages } from "./googleDocs.js";
 
 const { MONDAY_API_TOKEN } = ENV;
 if (!MONDAY_API_TOKEN) {
@@ -37,6 +38,10 @@ const COL = {
     PURCHASED: "doc_mkv4jk7r", // Doc column for purchased books
     CREATED: "doc_mkv4b5an", // Doc column for created books
   },
+  generated_pages_link: {
+    PURCHASED: "link_mkv0w7p8", // Link column for Google Docs (reusing photo URL column)
+    CREATED: "link_mkv0w7p8", // Link column for Google Docs (same column ID)
+  },
   pages_fingerprint: "long_text_mkv0hwkc", // Long text (pagesFingerprint JSON)
   created_at: "date_mkv033jy", // Date
   updated_at: "date_mkv0rp6g", // Date
@@ -55,83 +60,91 @@ function pruneEmpty(obj) {
   return out;
 }
 
-// Create multiple Monday.com Updates with generated pages content
-async function addGeneratedPagesAsMultipleUpdates(
+// Create Google Doc and add link to Monday.com
+async function createGeneratedPagesGoogleDoc(
   itemId,
+  boardType,
   generatedPages,
   bookTitle
 ) {
-  if (!generatedPages || !Array.isArray(generatedPages)) {
-    console.log("💬 No generated pages to add as updates");
+  if (
+    !generatedPages ||
+    !Array.isArray(generatedPages) ||
+    generatedPages.length === 0
+  ) {
+    console.log("📄 No generated pages to create Google Doc");
     return null;
   }
 
-  console.log(
-    `💬 Adding ${generatedPages.length} pages as separate updates for item ${itemId}...`
-  );
+  console.log(`📄 Creating Google Doc for ${boardType} board...`);
 
   try {
-    // First update: Introduction
-    const introContent = `📖 **Generated Pages for: ${bookTitle}**\n\n📊 **Total Pages:** ${generatedPages.length}\n\nEach page is posted as a separate comment below ⬇️`;
+    // Create Google Doc
+    const docResult = await createGoogleDocWithPages(
+      generatedPages,
+      bookTitle,
+      boardType
+    );
 
-    console.log("💬 Creating introduction update...");
-    await createSingleUpdate(itemId, introContent);
-
-    // Each page as a separate update
-    for (let i = 0; i < generatedPages.length; i++) {
-      const page = generatedPages[i];
-      const pageContent = `**📄 Page ${i + 1}: ${page.headline}**\n\n${
-        page.text
-      }`;
-
-      console.log(`💬 Creating update for page ${i + 1}: ${page.headline}`);
-      await createSingleUpdate(itemId, pageContent);
-
-      // Small delay to ensure proper ordering
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    if (!docResult) {
+      console.log("📄 Failed to create Google Doc");
+      return null;
     }
 
-    console.log(
-      `💬 Successfully created ${generatedPages.length + 1} updates!`
+    // Add Google Doc link to Monday.com item
+    console.log("📄 Adding Google Doc link to Monday.com...");
+    await addGoogleDocLinkToMonday(
+      itemId,
+      docResult.docUrl,
+      boardType,
+      docResult.title
     );
-    return { success: true, updateCount: generatedPages.length + 1 };
+
+    return docResult;
   } catch (error) {
-    console.error("❌ Error creating multiple updates:", error);
+    console.error("❌ Error in Google Doc creation process:", error);
     return null;
   }
 }
 
-async function createSingleUpdate(itemId, content) {
+// Add Google Doc link to Monday.com item
+async function addGoogleDocLinkToMonday(itemId, docUrl, boardType, docTitle) {
   try {
+    const linkColumnId = COL.generated_pages_link[boardType];
+
+    if (!linkColumnId) {
+      console.log("📄 No link column configured for Google Doc");
+      return;
+    }
+
     const mutation = `
-      mutation ($itemId: ID!, $body: String!) {
-        create_update(item_id: $itemId, body: $body) {
+      mutation ($itemId: ID!, $columnId: String!, $value: String!) {
+        change_column_value(item_id: $itemId, column_id: $columnId, value: $value) {
           id
         }
       }
     `;
 
+    const linkValue = JSON.stringify({
+      url: docUrl,
+      text: docTitle || "Generated Pages Document",
+    });
+
     const response = await monday.api(mutation, {
       variables: {
         itemId: itemId,
-        body: content,
+        columnId: linkColumnId,
+        value: linkValue,
       },
     });
 
     if (response.errors) {
-      console.error("💬 Monday.com API errors:", response.errors);
-      return null;
+      console.error("📄 Monday.com link update errors:", response.errors);
+    } else {
+      console.log("📄 Google Doc link added to Monday.com successfully");
     }
-
-    const update = response.data?.create_update;
-    if (update?.id) {
-      console.log(`💬 Update created with ID: ${update.id}`);
-    }
-
-    return update;
   } catch (error) {
-    console.error("❌ Error creating single update:", error);
-    return null;
+    console.error("❌ Error adding Google Doc link to Monday.com:", error);
   }
 }
 
@@ -210,14 +223,14 @@ function mapBookToColumnValues(book, boardType) {
     // Status
     text_mkv0bg60: book.status || "",
 
-    // Generated pages - now handled by updates/comments
+    // Generated pages - now handled by Google Docs
     long_text_mkv0v67a: book.generatedPages
       ? {
           text: `Generated ${
             Array.isArray(book.generatedPages)
               ? book.generatedPages.length
               : "N/A"
-          } pages - see updates/comments below`,
+          } pages - see Google Doc link`,
         }
       : null,
 
@@ -321,18 +334,19 @@ export async function upsertBookById(bookId, boardType = "PURCHASED") {
       console.log("✅ Created:", created || "(no payload)");
     }
 
-    // 4) Add generated pages as multiple updates/comments
+    // 4) Create Google Doc with generated pages
     if (resultItemId && book.generatedPages) {
-      console.log("💬 Adding generated pages as multiple updates...");
-      await addGeneratedPagesAsMultipleUpdates(
+      console.log("📄 Creating Google Doc with generated pages...");
+      await createGeneratedPagesGoogleDoc(
         resultItemId,
+        boardType,
         book.generatedPages,
         book.book_idea_title || book.title || "Untitled Book"
       );
     } else if (resultItemId && !book.generatedPages) {
-      console.log("💬 No generated pages found - skipping updates creation");
+      console.log("📄 No generated pages found - skipping Google Doc creation");
     } else if (!resultItemId) {
-      console.log("💬 No valid item ID - skipping updates creation");
+      console.log("📄 No valid item ID - skipping Google Doc creation");
     }
 
     const url = resultItemId
