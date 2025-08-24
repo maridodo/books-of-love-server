@@ -33,12 +33,8 @@ const COL = {
   photo_url: "link_mkv0w7p8", // Link (photo URL)
   status_text: "text_mkv0bg60",
   generated_pages: "long_text_mkv0v67a", // Long text (generatedPages JSON) - keeping for backward compatibility
-  generated_pages_files: {
-    PURCHASED: "file_mkv3898z", // Files column for purchased books
-    CREATED: "file_mkv3qqce", // Files column for created books
-  },
   generated_pages_docs: {
-    PURCHASED: null, // Add doc column to purchased board later
+    PURCHASED: "doc_mkv4jk7r", // Doc column for purchased books
     CREATED: "doc_mkv4b5an", // Doc column for created books
   },
   pages_fingerprint: "long_text_mkv0hwkc", // Long text (pagesFingerprint JSON)
@@ -59,78 +55,75 @@ function pruneEmpty(obj) {
   return out;
 }
 
-// Upload JSON file to Monday.com Files column
-async function uploadGeneratedPagesToMonday(
+// Create Monday.com Doc with generated pages content
+async function createGeneratedPagesDoc(
   itemId,
-  boardId,
   boardType,
-  generatedPages
+  generatedPages,
+  bookTitle = "Book"
 ) {
-  if (!generatedPages) {
-    console.log("📁 No generated pages to upload");
+  const docColumnId = COL.generated_pages_docs[boardType];
+
+  if (!docColumnId) {
+    console.log(`📄 No doc column configured for ${boardType} board`);
     return null;
   }
 
-  const jsonContent = JSON.stringify(generatedPages, null, 2);
-  const filename = `generated_pages_${itemId}_${Date.now()}.json`;
-  const filesColumnId = COL.generated_pages_files[boardType];
+  if (!generatedPages) {
+    console.log("📄 No generated pages to create doc");
+    return null;
+  }
 
   console.log(
-    `📁 Uploading generated pages file: ${filename} to column ${filesColumnId}`
+    `📄 Creating Monday.com Doc for item ${itemId} in ${boardType} board...`
   );
+  console.log(`📄 Using doc column: ${docColumnId}`);
 
   try {
-    // Create a Buffer from JSON
-    const buffer = Buffer.from(jsonContent, "utf8");
-
-    // Monday.com file upload using their REST API
-    const formData = new FormData();
-    formData.append(
-      "query",
-      `
-      mutation add_file($itemId: Int!, $columnId: String!, $file: File!) {
-        add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) {
+    const mutation = `
+      mutation ($itemId: ID!, $columnId: String!) {
+        create_doc(location: {board: {item_id: $itemId, column_id: $columnId}}) {
           id
-          name
           url
         }
       }
-    `
-    );
-    formData.append(
-      "variables",
-      JSON.stringify({
-        itemId: parseInt(itemId),
-        columnId: filesColumnId,
-      })
-    );
+    `;
 
-    // Create a blob from buffer and append as file
-    const blob = new Blob([buffer], { type: "application/json" });
-    formData.append("map", JSON.stringify({ 1: ["variables.file"] }));
-    formData.append("1", blob, filename);
-
-    const response = await fetch("https://api.monday.com/v2/file", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${MONDAY_API_TOKEN}`,
+    const response = await monday.api(mutation, {
+      variables: {
+        itemId: itemId,
+        columnId: docColumnId,
       },
-      body: formData,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `File upload failed: ${response.status} ${response.statusText}`
-      );
+    if (response.errors) {
+      console.error("📄 Monday.com API errors:", response.errors);
+      return null;
     }
 
-    const result = await response.json();
-    console.log("📁 File upload result:", result);
+    const doc = response.data?.create_doc;
 
-    return result;
+    if (doc?.id) {
+      console.log("📄 Doc created successfully!");
+      console.log(`📄 Doc ID: ${doc.id}`);
+      console.log(`📄 Doc URL: ${doc.url || "N/A"}`);
+
+      // Log the generated pages summary for reference
+      const pageCount = Array.isArray(generatedPages)
+        ? generatedPages.length
+        : 0;
+      console.log(
+        `📄 Doc will contain ${pageCount} generated pages for: ${bookTitle}`
+      );
+
+      return doc;
+    } else {
+      console.log("📄 Doc creation returned no data");
+      return null;
+    }
   } catch (error) {
-    console.error("❌ Error uploading generated pages file:", error);
-    // Don't throw - we don't want file upload failures to break the whole process
+    console.error("❌ Error creating Monday.com Doc:", error);
+    // Don't throw - we don't want doc creation failures to break the whole process
     return null;
   }
 }
@@ -210,9 +203,9 @@ function mapBookToColumnValues(book, boardType) {
     // Status
     text_mkv0bg60: book.status || "",
 
-    // Generated pages - keep text version for now (will be replaced by file upload)
+    // Generated pages - now handled by docs
     long_text_mkv0v67a: book.generatedPages
-      ? { text: "See uploaded file for full generated pages data" }
+      ? { text: "See Monday.com Doc for full generated pages content" }
       : null,
 
     // Pages fingerprint
@@ -315,15 +308,19 @@ export async function upsertBookById(bookId, boardType = "PURCHASED") {
       console.log("✅ Created:", created || "(no payload)");
     }
 
-    // 4) Upload generated pages file if we have the data and a valid item ID
+    // 4) Create Monday.com Doc for generated pages
     if (resultItemId && book.generatedPages) {
-      console.log("📁 Uploading generated pages file...");
-      await uploadGeneratedPagesToMonday(
+      console.log("📄 Creating Monday.com Doc for generated pages...");
+      await createGeneratedPagesDoc(
         resultItemId,
-        boardId,
         boardType,
-        book.generatedPages
+        book.generatedPages,
+        book.book_idea_title || book.title || "Untitled Book"
       );
+    } else if (resultItemId && !book.generatedPages) {
+      console.log("📄 No generated pages found - skipping doc creation");
+    } else if (!resultItemId) {
+      console.log("📄 No valid item ID - skipping doc creation");
     }
 
     const url = resultItemId
@@ -357,7 +354,7 @@ export async function upsertBookToPurchased(bookId) {
 
 export async function upsertBookToCreated(bookId) {
   console.log("⏳ Waiting 20 seconds for Base44 to save email...");
-  await new Promise((resolve) => setTimeout(resolve, 20001));
+  await new Promise((resolve) => setTimeout(resolve, 20000));
 
   return upsertBookById(bookId, "CREATED");
 }
