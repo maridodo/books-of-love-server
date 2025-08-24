@@ -55,36 +55,58 @@ function pruneEmpty(obj) {
   return out;
 }
 
-// Create Monday.com Doc with generated pages content
-async function createGeneratedPagesDoc(
+// Create multiple Monday.com Updates with generated pages content
+async function addGeneratedPagesAsMultipleUpdates(
   itemId,
-  boardType,
   generatedPages,
-  bookTitle = "Book"
+  bookTitle
 ) {
-  const docColumnId = COL.generated_pages_docs[boardType];
-
-  if (!docColumnId) {
-    console.log(`📄 No doc column configured for ${boardType} board`);
-    return null;
-  }
-
-  if (!generatedPages) {
-    console.log("📄 No generated pages to create doc");
+  if (!generatedPages || !Array.isArray(generatedPages)) {
+    console.log("💬 No generated pages to add as updates");
     return null;
   }
 
   console.log(
-    `📄 Creating Monday.com Doc for item ${itemId} in ${boardType} board...`
+    `💬 Adding ${generatedPages.length} pages as separate updates for item ${itemId}...`
   );
-  console.log(`📄 Using doc column: ${docColumnId}`);
 
   try {
+    // First update: Introduction
+    const introContent = `📖 **Generated Pages for: ${bookTitle}**\n\n📊 **Total Pages:** ${generatedPages.length}\n\nEach page is posted as a separate comment below ⬇️`;
+
+    console.log("💬 Creating introduction update...");
+    await createSingleUpdate(itemId, introContent);
+
+    // Each page as a separate update
+    for (let i = 0; i < generatedPages.length; i++) {
+      const page = generatedPages[i];
+      const pageContent = `**📄 Page ${i + 1}: ${page.headline}**\n\n${
+        page.text
+      }`;
+
+      console.log(`💬 Creating update for page ${i + 1}: ${page.headline}`);
+      await createSingleUpdate(itemId, pageContent);
+
+      // Small delay to ensure proper ordering
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    console.log(
+      `💬 Successfully created ${generatedPages.length + 1} updates!`
+    );
+    return { success: true, updateCount: generatedPages.length + 1 };
+  } catch (error) {
+    console.error("❌ Error creating multiple updates:", error);
+    return null;
+  }
+}
+
+async function createSingleUpdate(itemId, content) {
+  try {
     const mutation = `
-      mutation ($itemId: ID!, $columnId: String!) {
-        create_doc(location: {board: {item_id: $itemId, column_id: $columnId}}) {
+      mutation ($itemId: ID!, $body: String!) {
+        create_update(item_id: $itemId, body: $body) {
           id
-          url
         }
       }
     `;
@@ -92,38 +114,23 @@ async function createGeneratedPagesDoc(
     const response = await monday.api(mutation, {
       variables: {
         itemId: itemId,
-        columnId: docColumnId,
+        body: content,
       },
     });
 
     if (response.errors) {
-      console.error("📄 Monday.com API errors:", response.errors);
+      console.error("💬 Monday.com API errors:", response.errors);
       return null;
     }
 
-    const doc = response.data?.create_doc;
-
-    if (doc?.id) {
-      console.log("📄 Doc created successfully!");
-      console.log(`📄 Doc ID: ${doc.id}`);
-      console.log(`📄 Doc URL: ${doc.url || "N/A"}`);
-
-      // Log the generated pages summary for reference
-      const pageCount = Array.isArray(generatedPages)
-        ? generatedPages.length
-        : 0;
-      console.log(
-        `📄 Doc will contain ${pageCount} generated pages for: ${bookTitle}`
-      );
-
-      return doc;
-    } else {
-      console.log("📄 Doc creation returned no data");
-      return null;
+    const update = response.data?.create_update;
+    if (update?.id) {
+      console.log(`💬 Update created with ID: ${update.id}`);
     }
+
+    return update;
   } catch (error) {
-    console.error("❌ Error creating Monday.com Doc:", error);
-    // Don't throw - we don't want doc creation failures to break the whole process
+    console.error("❌ Error creating single update:", error);
     return null;
   }
 }
@@ -203,9 +210,15 @@ function mapBookToColumnValues(book, boardType) {
     // Status
     text_mkv0bg60: book.status || "",
 
-    // Generated pages - now handled by docs
+    // Generated pages - now handled by updates/comments
     long_text_mkv0v67a: book.generatedPages
-      ? { text: "See Monday.com Doc for full generated pages content" }
+      ? {
+          text: `Generated ${
+            Array.isArray(book.generatedPages)
+              ? book.generatedPages.length
+              : "N/A"
+          } pages - see updates/comments below`,
+        }
       : null,
 
     // Pages fingerprint
@@ -308,19 +321,18 @@ export async function upsertBookById(bookId, boardType = "PURCHASED") {
       console.log("✅ Created:", created || "(no payload)");
     }
 
-    // 4) Create Monday.com Doc for generated pages
+    // 4) Add generated pages as multiple updates/comments
     if (resultItemId && book.generatedPages) {
-      console.log("📄 Creating Monday.com Doc for generated pages...");
-      await createGeneratedPagesDoc(
+      console.log("💬 Adding generated pages as multiple updates...");
+      await addGeneratedPagesAsMultipleUpdates(
         resultItemId,
-        boardType,
         book.generatedPages,
         book.book_idea_title || book.title || "Untitled Book"
       );
     } else if (resultItemId && !book.generatedPages) {
-      console.log("📄 No generated pages found - skipping doc creation");
+      console.log("💬 No generated pages found - skipping updates creation");
     } else if (!resultItemId) {
-      console.log("📄 No valid item ID - skipping doc creation");
+      console.log("💬 No valid item ID - skipping updates creation");
     }
 
     const url = resultItemId
