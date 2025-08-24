@@ -8,7 +8,7 @@ const GOOGLE_FOLDERS = {
   PURCHASED: "1MZMidayqFqiPR8i2uNqXOSUiIz_FBxPj", // Purchased board folder
 };
 
-const ADMIN_EMAIL = "info@taledofme.io";
+const ADMIN_EMAIL = "info@talesofme.io";
 
 // Initialize Google Auth
 function createGoogleAuth() {
