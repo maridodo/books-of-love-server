@@ -1,4 +1,4 @@
-// config/env.js
+// config/env.js - Claude v27 - Added Google API credentials
 import dotenv from "dotenv";
 dotenv.config();
 

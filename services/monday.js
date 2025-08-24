@@ -1,3 +1,4 @@
+// services/monday.js - Claude v27 - Google Docs integration (replaces updates/comments)
 import mondaySdk from "monday-sdk-js";
 import { ENV } from "../config/env.js";
 import { getBookById } from "./base44.js";

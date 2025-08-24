@@ -1,3 +1,4 @@
+// services/googleDocs.js - Claude v27 - Google Docs creation service
 import { google } from "googleapis";
 import { ENV } from "../config/env.js";
 
